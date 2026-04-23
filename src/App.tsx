@@ -29,6 +29,7 @@ export default function App() {
 
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [syncOffset, setSyncOffset] = useState(0);
 
   // Gemini API Initialization
   const ai = useMemo(() => {
@@ -96,6 +97,21 @@ export default function App() {
     a.download = `${videoFile?.name.split('.')[0] || 'subtitles'}.srt`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const synchronizeSubtitles = () => {
+    if (!subtitles.length || syncOffset === 0) return;
+    
+    const updatedSubtitles = subtitles.map(sub => ({
+      ...sub,
+      start: Math.max(0, sub.start + syncOffset),
+      end: Math.max(0.1, sub.end + syncOffset)
+    }));
+    
+    setSubtitles(updatedSubtitles);
+    setSyncOffset(0); // Reset after sync application
+    setError(`Synced: Offset of ${syncOffset > 0 ? '+' : ''}${syncOffset}s applied to ${subtitles.length} entries.`);
+    setTimeout(() => setError(null), 3000);
   };
 
   const exportBurntInVideo = async () => {
@@ -621,9 +637,44 @@ export default function App() {
             </div>
           </section>
 
+          {/* Sync Adjustment */}
+          <section className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">3. Sync Syncronize</h3>
+              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${syncOffset !== 0 ? 'bg-amber-500/10 text-amber-500' : 'text-neutral-600'}`}>
+                {syncOffset > 0 ? '+' : ''}{syncOffset}s
+              </span>
+            </div>
+            <div className="flex gap-4 items-center">
+              <div className="flex-1 space-y-2">
+                <input 
+                  type="range" 
+                  min="-20"
+                  max="20"
+                  step="1"
+                  value={syncOffset}
+                  onChange={(e) => setSyncOffset(parseInt(e.target.value))}
+                  className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                />
+                <div className="flex justify-between text-[8px] font-mono text-neutral-600 uppercase tracking-widest">
+                  <span>-20s</span>
+                  <span>0</span>
+                  <span>+20s</span>
+                </div>
+              </div>
+              <button
+                onClick={synchronizeSubtitles}
+                disabled={!subtitles.length || syncOffset === 0}
+                className="w-20 px-2 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 border border-neutral-700 rounded text-[9px] uppercase font-bold text-center leading-tight transition-all"
+              >
+                Syncronize<br/>Subtitles
+              </button>
+            </div>
+          </section>
+
           {/* Subtitle Styling */}
           <section className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">3. Visual Style</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">4. Visual Style</h3>
             <div className="space-y-6">
               <div>
                 <div className="flex justify-between mb-2">
@@ -712,11 +763,11 @@ export default function App() {
                 />
                 
                 {/* Time Display */}
-                <div className="absolute top-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="bg-black/60 backdrop-blur-sm px-3 py-1 rounded text-[10px] font-mono text-amber-500 border border-amber-500/20">
+                <div className="absolute bottom-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-amber-500 border border-amber-500/30 shadow-lg">
                     {formatVideoTime(videoRef.current?.currentTime || 0)}
                   </div>
-                  <div className="bg-black/60 backdrop-blur-sm px-3 py-1 rounded text-[10px] font-mono text-neutral-400 border border-neutral-800">
+                  <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-neutral-300 border border-neutral-700 shadow-lg">
                     -{formatVideoTime((videoRef.current?.duration || 0) - (videoRef.current?.currentTime || 0))}
                   </div>
                 </div>
