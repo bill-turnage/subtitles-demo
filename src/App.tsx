@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { GoogleGenAI } from "@google/genai";
-import { Upload, Play, Pause, Settings, Languages, Type, Layers, Check, Loader2, Video } from 'lucide-react';
+import { GoogleGenAI, Type } from "@google/genai";
+import { Upload, Play, Pause, Settings, Languages, Type as TypeIcon, Layers, Check, Loader2, Video } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { ISO_LANGUAGES, Subtitle, SubtitleSettings } from './constants';
 
@@ -299,16 +299,47 @@ export default function App() {
             { text: prompt },
           ],
         },
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              properties: {
+                start: { type: Type.NUMBER, description: "Start time in seconds" },
+                end: { type: Type.NUMBER, description: "End time in seconds" },
+                text: { type: Type.STRING, description: "The English subtitle text" },
+              },
+              required: ["start", "end", "text"],
+            },
+          },
+        }
       });
 
       const text = response.text;
       if (!text) throw new Error("No response from AI");
 
-      const jsonMatch = text.match(/\[[\s\S]*\]/);
-      const jsonStr = jsonMatch ? jsonMatch[0] : text;
+      // Robust JSON cleaning to avoid "Unexpected non-whitespace character" errors
+      let jsonStr = text.trim();
+      
+      // Remove Markdown code blocks if present
+      if (jsonStr.startsWith('```')) {
+        const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+        if (match) jsonStr = match[1];
+      }
+
+      // Handle leading/trailing noise by finding the first [ and last ]
+      const firstBracket = jsonStr.indexOf('[');
+      const lastBracket = jsonStr.lastIndexOf(']');
+      if (firstBracket !== -1 && lastBracket !== -1) {
+        jsonStr = jsonStr.substring(firstBracket, lastBracket + 1);
+      }
       
       const parsedSubtitles: Subtitle[] = JSON.parse(jsonStr);
-      setSubtitles(parsedSubtitles);
+      
+      // Sort subtitles by start time as a safety measure
+      const sortedSubtitles = parsedSubtitles.sort((a, b) => a.start - b.start);
+      setSubtitles(sortedSubtitles);
     } catch (err) {
       console.error(err);
       setError('Failed to generate subtitles. Please try again.');
@@ -364,7 +395,7 @@ export default function App() {
               onClick={exportSRT}
               className="w-full text-left px-4 py-3 text-xs hover:bg-neutral-800 transition-colors flex items-center gap-3 border-b border-neutral-800"
             >
-              <Type className="w-4 h-4 text-amber-500" />
+              <TypeIcon className="w-4 h-4 text-amber-500" />
               <div>
                 <p className="font-semibold text-neutral-200">Export .SRT File</p>
                 <p className="text-[10px] text-neutral-500">Standard subtitle format</p>
