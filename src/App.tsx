@@ -361,19 +361,34 @@ export default function App() {
 
       <main className="flex-1 flex overflow-hidden">
         {/* Settings Sidebar */}
-        <aside className="w-80 border-r border-neutral-800 bg-neutral-900/30 p-6 flex flex-col gap-8 flex-shrink-0">
+        <aside className="w-80 border-r border-neutral-800 bg-neutral-900/30 p-6 flex flex-col gap-6 flex-shrink-0 overflow-y-auto custom-scrollbar">
           
           {/* Upload Section */}
           <section>
             <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-4">1. Media Source</h3>
             <div 
               onClick={() => fileInputRef.current?.click()}
-              className="w-full aspect-video border-2 border-dashed border-neutral-700 rounded-lg flex flex-col items-center justify-center gap-2 bg-neutral-800/40 hover:bg-neutral-800/60 cursor-pointer transition-colors overflow-hidden group"
+              className={`w-full aspect-video border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 transition-all cursor-pointer overflow-hidden group ${
+                videoFile 
+                  ? 'border-amber-500/30 bg-amber-500/5' 
+                  : 'border-neutral-700 bg-neutral-800/40 hover:bg-neutral-800/60'
+              }`}
             >
-              <Upload className="w-8 h-8 text-neutral-500 group-hover:text-amber-500 transition-colors" />
-              <span className="text-[10px] font-medium text-neutral-400 px-4 text-center truncate w-full uppercase tracking-widest">
-                {videoFile ? videoFile.name : 'cinema_reel_raw.mp4'}
-              </span>
+              {videoFile ? (
+                <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
+                  <Check className="w-8 h-8 text-amber-500 mb-2" />
+                  <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest px-4 text-center truncate w-full">
+                    {videoFile.name}
+                  </span>
+                </div>
+              ) : (
+                <>
+                  <Upload className="w-8 h-8 text-neutral-500 group-hover:text-amber-500 transition-colors" />
+                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">
+                    Upload Video
+                  </span>
+                </>
+              )}
             </div>
             <input
               type="file"
@@ -450,20 +465,28 @@ export default function App() {
             </div>
           </section>
 
-          <button 
-            onClick={generateSubtitles}
-            disabled={!videoFile || isProcessing}
-            className="mt-auto w-full py-4 bg-amber-500 hover:bg-amber-400 disabled:bg-neutral-800 disabled:text-neutral-600 disabled:shadow-none text-black font-bold uppercase tracking-widest text-[10px] rounded transition-all active:scale-95 shadow-[0_0_20px_rgba(245,158,11,0.2)] flex items-center justify-center gap-2"
-          >
-            {isProcessing ? (
-              <>
-                <Loader2 className="w-3 h-3 animate-spin" />
-                Processing...
-              </>
-            ) : (
-              'Generate Captions'
-            )}
-          </button>
+          <div className="pt-4 mt-auto">
+            <button 
+              onClick={generateSubtitles}
+              disabled={!videoFile || isProcessing}
+              className={`w-full py-4 font-bold uppercase tracking-widest text-[10px] rounded transition-all active:scale-95 flex items-center justify-center gap-2 ${
+                !videoFile 
+                  ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed shadow-none' 
+                  : isProcessing
+                    ? 'bg-neutral-800 text-amber-500 cursor-wait'
+                    : 'bg-amber-500 text-black hover:bg-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-pulse hover:animate-none'
+              }`}
+            >
+              {isProcessing ? (
+                <>
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                  Generating...
+                </>
+              ) : (
+                'Generate Captions'
+              )}
+            </button>
+          </div>
         </aside>
 
         {/* Video Preview Area */}
