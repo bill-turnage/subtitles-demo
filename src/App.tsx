@@ -31,7 +31,17 @@ export default function App() {
   const [exportProgress, setExportProgress] = useState(0);
 
   // Gemini API Initialization
-  const ai = useMemo(() => new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY }), []);
+  const ai = useMemo(() => {
+    const key = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
+    if (!key) {
+      console.warn('Lumina Subtitles: No API key found. AI features will be disabled.');
+    }
+    return new GoogleGenAI({ apiKey: key });
+  }, []);
+
+  useEffect(() => {
+    console.log('Lumina Subtitles: Core initialized.');
+  }, []);
 
   useEffect(() => {
     if (videoFile) {
