@@ -211,6 +211,66 @@ export default function App() {
     });
   };
 
+  const extractAudio = async (file: File): Promise<string> => {
+    const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+    const arrayBuffer = await file.arrayBuffer();
+    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+
+    // Create custom WAV encoding
+    const worker = new Worker(URL.createObjectURL(new Blob([`
+      self.onmessage = function(e) {
+        const { buffer, sampleRate } = e.data;
+        const length = buffer.length * 2 + 44;
+        const out = new DataView(new ArrayBuffer(length));
+        
+        const writeString = (offset, string) => {
+          for (let i = 0; i < string.length; i++) {
+            out.setUint8(offset + i, string.charCodeAt(i));
+          }
+        };
+
+        writeString(0, 'RIFF');
+        out.setUint32(4, length - 8, true);
+        writeString(8, 'WAVE');
+        writeString(12, 'fmt ');
+        out.setUint32(16, 16, true);
+        out.setUint16(20, 1, true); // PCM
+        out.setUint16(22, 1, true); // Mono
+        out.setUint32(24, sampleRate, true);
+        out.setUint32(28, sampleRate * 2, true);
+        out.setUint16(32, 2, true);
+        out.setUint16(34, 16, true);
+        writeString(36, 'data');
+        out.setUint32(40, length - 44, true);
+
+        const channelData = buffer;
+        let offset = 44;
+        for (let i = 0; i < channelData.length; i++) {
+          const s = Math.max(-1, Math.min(1, channelData[i]));
+          out.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
+          offset += 2;
+        }
+        self.postMessage(out.buffer, [out.buffer]);
+      }
+    `], { type: 'application/javascript' })));
+
+    return new Promise((resolve) => {
+      worker.onmessage = async (e) => {
+        const blob = new Blob([e.data], { type: 'audio/wav' });
+        const reader = new FileReader();
+        reader.readAsDataURL(blob);
+        reader.onloadend = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
+          audioContext.close();
+        };
+      };
+      // Send only one channel to save space
+      const channelData = audioBuffer.getChannelData(0);
+      worker.postMessage({ buffer: channelData, sampleRate: audioBuffer.sampleRate });
+    });
+  };
+
   const generateSubtitles = async () => {
     if (!videoFile) return;
 
@@ -218,12 +278,13 @@ export default function App() {
     setError(null);
 
     try {
-      const base64Data = await fileToBase64(videoFile);
+      // Extract ONLY audio to prevent "Allocation size overflow"
+      const audioBase64 = await extractAudio(videoFile);
       
-      const prompt = `Transcribe this video and translate it from its source language (${ISO_LANGUAGES.find(l => l.code === sourceLang)?.name}) to English. 
+      const prompt = `Transcribe this audio and translate it from its source language (${ISO_LANGUAGES.find(l => l.code === sourceLang)?.name}) to English. 
       Output ONLY a JSON array of objects. Each object MUST have 'start' (number, seconds), 'end' (number, seconds), and 'text' (string, English subtitle).
       Example: [{"start": 0.5, "end": 2.5, "text": "Hello world"}]
-      Ensure the timestamps are accurate to the speech in the video.`;
+      Ensure the timestamps are accurate to the speech.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -231,8 +292,8 @@ export default function App() {
           parts: [
             {
               inlineData: {
-                mimeType: videoFile.type,
-                data: base64Data,
+                mimeType: "audio/wav",
+                data: audioBase64,
               },
             },
             { text: prompt },
