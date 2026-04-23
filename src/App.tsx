@@ -319,25 +319,65 @@ export default function App() {
       const text = response.text;
       if (!text) throw new Error("No response from AI");
 
-      // Robust JSON cleaning to avoid "Unexpected non-whitespace character" errors
+      // Robust JSON cleaning
       let jsonStr = text.trim();
       
-      // Remove Markdown code blocks if present
       if (jsonStr.startsWith('```')) {
         const match = jsonStr.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
         if (match) jsonStr = match[1];
       }
 
-      // Handle leading/trailing noise by finding the first [ and last ]
       const firstBracket = jsonStr.indexOf('[');
       const lastBracket = jsonStr.lastIndexOf(']');
       if (firstBracket !== -1 && lastBracket !== -1) {
         jsonStr = jsonStr.substring(firstBracket, lastBracket + 1);
       }
+
+      // JSON Repair Logic for "Unterminated string" or truncated responses
+      const parseWithRepair = (raw: string): Subtitle[] => {
+        try {
+          return JSON.parse(raw);
+        } catch (initialError) {
+          console.warn('Lumina Subtitles: Initial parse failed, attempting repair...', initialError);
+          
+          let repaired = raw.trim();
+          
+          // If it doesn't end with ], it's likely truncated
+          if (!repaired.endsWith(']')) {
+            // Find the last complete object ending
+            const lastCompleteObject = repaired.lastIndexOf('}');
+            if (lastCompleteObject !== -1) {
+              repaired = repaired.substring(0, lastCompleteObject + 1) + ']';
+            } else {
+              repaired = repaired + '"]}]'; // Guerilla repair for mid-string truncation
+            }
+          }
+
+          try {
+            return JSON.parse(repaired);
+          } catch (secondaryError) {
+            // Last resort: manual regex extraction for each object
+            console.error('Lumina Subtitles: Repair failed, falling back to regex extraction.', secondaryError);
+            const matches = repaired.matchAll(/\{\s*"start":\s*(\d+\.?\d*),\s*"end":\s*(\d+\.?\d*),\s*"text":\s*"([\s\S]*?)"\s*\}/g);
+            const subs: Subtitle[] = [];
+            for (const match of matches) {
+              subs.push({
+                start: parseFloat(match[1]),
+                end: parseFloat(match[2]),
+                text: match[3].replace(/\\"/g, '"')
+              });
+            }
+            return subs;
+          }
+        }
+      };
       
-      const parsedSubtitles: Subtitle[] = JSON.parse(jsonStr);
+      const parsedSubtitles = parseWithRepair(jsonStr);
       
-      // Sort subtitles by start time as a safety measure
+      if (parsedSubtitles.length === 0) {
+        throw new Error("Could not parse any valid subtitles from AI response.");
+      }
+
       const sortedSubtitles = parsedSubtitles.sort((a, b) => a.start - b.start);
       setSubtitles(sortedSubtitles);
     } catch (err) {
