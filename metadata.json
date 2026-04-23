@@ -1,0 +1,6 @@
+{
+  "name": "LingaSub - AI Video Subtitler",
+  "description": "Upload videos and generate English subtitles automatically using Gemini AI. Customize styling and preview in real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
