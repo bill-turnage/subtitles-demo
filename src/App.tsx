@@ -34,13 +34,30 @@ export default function App() {
   const ai = useMemo(() => {
     const key = process.env.GEMINI_API_KEY || (import.meta as any).env?.VITE_GEMINI_API_KEY || '';
     if (!key) {
-      console.warn('Lumina Subtitles: No API key found. AI features will be disabled.');
+      console.warn('Subtitle Maker: No API key found. AI features will be disabled.');
     }
     return new GoogleGenAI({ apiKey: key });
   }, []);
 
   useEffect(() => {
-    console.log('Lumina Subtitles: Core initialized.');
+    console.log('Subtitle Maker: Core initialized.');
+    
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (!videoRef.current) return;
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'SELECT') return;
+
+      if (e.key === 'ArrowLeft') {
+        videoRef.current.currentTime = Math.max(0, videoRef.current.currentTime - 10);
+      } else if (e.key === 'ArrowRight') {
+        videoRef.current.currentTime = Math.min(videoRef.current.duration, videoRef.current.currentTime + 10);
+      } else if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
   useEffect(() => {
@@ -50,6 +67,13 @@ export default function App() {
       return () => URL.revokeObjectURL(url);
     }
   }, [videoFile]);
+
+  const formatVideoTime = (seconds: number): string => {
+    if (!seconds || isNaN(seconds)) return '0:00';
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
 
   const formatTimeSRT = (seconds: number): string => {
     const date = new Date(0);
@@ -90,20 +114,27 @@ export default function App() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    // Check supported types
     const mimeType = ['video/webm;codecs=vp9', 'video/webm', 'video/mp4'].find(type => 
       MediaRecorder.isTypeSupported(type)
-    ) || '';
+    ) || 'video/webm';
 
     const stream = canvas.captureStream(30);
     const recorder = new MediaRecorder(stream, {
       mimeType,
-      videoBitsPerSecond: 5000000 
+      videoBitsPerSecond: 8000000 // Increased to 8Mbps for better quality
     });
 
     const chunks: Blob[] = [];
-    recorder.ondataavailable = (e) => chunks.push(e.data);
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    
     recorder.onstop = () => {
+      if (chunks.length === 0) {
+        setError("Export failed: No video data captured.");
+        setIsExportingVideo(false);
+        return;
+      }
       const blob = new Blob(chunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -118,10 +149,22 @@ export default function App() {
     };
 
     video.currentTime = 0;
-    video.muted = true; // Mute during render to avoid audio overlap issues
+    video.muted = true;
     
-    // Ensure video is ready at frame 0
-    await new Promise((resolve) => {
+    // Improved ready check
+    if (video.readyState < 2) {
+      await new Promise(resolve => {
+        const onLoaded = () => {
+          video.removeEventListener('loadeddata', onLoaded);
+          resolve(true);
+        };
+        video.addEventListener('loadeddata', onLoaded);
+      });
+    }
+
+    // Wait for seek to 0
+    await new Promise(resolve => {
+      if (video.currentTime === 0) resolve(true);
       const onSeeked = () => {
         video.removeEventListener('seeked', onSeeked);
         resolve(true);
@@ -129,12 +172,18 @@ export default function App() {
       video.addEventListener('seeked', onSeeked);
     });
 
-    recorder.start();
-    await video.play().catch(console.error);
+    // Small delay to ensure canvas is ready
+    await new Promise(resolve => setTimeout(resolve, 300));
+
+    recorder.start(1000); // Collect data in 1s chunks
+    await video.play().catch(err => {
+      console.error("Playback error during export:", err);
+      setIsExportingVideo(false);
+    });
 
     const renderLoop = () => {
       if (!isExportingVideo) {
-        recorder.stop();
+        if (recorder.state !== 'inactive') recorder.stop();
         video.pause();
         return;
       }
@@ -178,7 +227,10 @@ export default function App() {
       if (video.currentTime < video.duration && !video.paused) {
         requestAnimationFrame(renderLoop);
       } else {
-        recorder.stop();
+        if (recorder.state !== 'inactive') {
+          // Slight delay to catch the very last frame
+          setTimeout(() => recorder.stop(), 100);
+        }
         video.pause();
       }
     };
@@ -284,7 +336,8 @@ export default function App() {
       const prompt = `Transcribe this audio and translate it from its source language (${ISO_LANGUAGES.find(l => l.code === sourceLang)?.name}) to English. 
       Output ONLY a JSON array of objects. Each object MUST have 'start' (number, seconds), 'end' (number, seconds), and 'text' (string, English subtitle).
       Example: [{"start": 0.5, "end": 2.5, "text": "Hello world"}]
-      Ensure the timestamps are accurate to the speech.`;
+      CRITICAL: The 'start' and 'end' values MUST BE PRECISELY ALIGNED to the speech timestamps in the audio file.
+      Do not hallucinate timestamps. Ensure 'start' is when the word starts and 'end' is when the phrase ends.`;
 
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
@@ -417,7 +470,7 @@ export default function App() {
             <Video className="w-5 h-5 text-black" />
           </div>
           <h1 className="text-xl font-serif tracking-tight text-white italic">
-            Lumina Subtitles <span className="text-xs font-sans not-italic text-neutral-500 ml-2 uppercase tracking-widest">v2.4</span>
+            Subtitle Maker <span className="text-xs font-sans not-italic text-neutral-500 ml-2 uppercase tracking-widest">v3.0</span>
           </h1>
         </div>
         <div className="flex items-center gap-4 relative group/export">
@@ -503,14 +556,14 @@ export default function App() {
 
       <main className="flex-1 flex overflow-hidden">
         {/* Settings Sidebar */}
-        <aside className="w-80 border-r border-neutral-800 bg-neutral-900/30 p-6 flex flex-col gap-6 flex-shrink-0 overflow-y-auto custom-scrollbar">
+        <aside className="w-80 border-r border-neutral-800 bg-neutral-900/30 p-6 flex flex-col gap-4 flex-shrink-0 overflow-y-auto custom-scrollbar">
           
           {/* Upload Section */}
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-4">1. Media Source</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">1. Media Source</h3>
             <div 
               onClick={() => fileInputRef.current?.click()}
-              className={`w-full aspect-video border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 transition-all cursor-pointer overflow-hidden group ${
+              className={`w-full py-6 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 transition-all cursor-pointer overflow-hidden group ${
                 videoFile 
                   ? 'border-amber-500/30 bg-amber-500/5' 
                   : 'border-neutral-700 bg-neutral-800/40 hover:bg-neutral-800/60'
@@ -658,6 +711,16 @@ export default function App() {
                   onPause={() => setIsPlaying(false)}
                 />
                 
+                {/* Time Display */}
+                <div className="absolute top-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-black/60 backdrop-blur-sm px-3 py-1 rounded text-[10px] font-mono text-amber-500 border border-amber-500/20">
+                    {formatVideoTime(videoRef.current?.currentTime || 0)}
+                  </div>
+                  <div className="bg-black/60 backdrop-blur-sm px-3 py-1 rounded text-[10px] font-mono text-neutral-400 border border-neutral-800">
+                    -{formatVideoTime((videoRef.current?.duration || 0) - (videoRef.current?.currentTime || 0))}
+                  </div>
+                </div>
+
                 {/* Subtitle Overlay (Lower 25%) */}
                 <div className="absolute bottom-0 left-0 w-full h-1/4 flex flex-col items-center justify-center pb-8 z-10 pointer-events-none">
                   <div className="absolute top-0 w-full border-t border-amber-500/10 border-dashed text-[8px] text-amber-500/30 text-center py-1 uppercase tracking-[0.4em] font-mono">
