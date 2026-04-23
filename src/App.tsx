@@ -65,10 +65,11 @@ export default function App() {
   };
 
   const exportBurntInVideo = async () => {
-    if (!videoRef.current || !videoFile) return;
+    if (!videoRef.current || !videoFile || !subtitles.length) return;
 
     const video = videoRef.current;
     const originalTime = video.currentTime;
+    const originalMuted = video.muted;
     
     setIsExportingVideo(true);
     setExportProgress(0);
@@ -79,69 +80,83 @@ export default function App() {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
+    // Check supported types
+    const mimeType = ['video/webm;codecs=vp9', 'video/webm', 'video/mp4'].find(type => 
+      MediaRecorder.isTypeSupported(type)
+    ) || '';
+
     const stream = canvas.captureStream(30);
     const recorder = new MediaRecorder(stream, {
-      mimeType: 'video/webm;codecs=vp9',
-      videoBitsPerSecond: 5000000 // 5Mbps
+      mimeType,
+      videoBitsPerSecond: 5000000 
     });
 
     const chunks: Blob[] = [];
     recorder.ondataavailable = (e) => chunks.push(e.data);
     recorder.onstop = () => {
-      const blob = new Blob(chunks, { type: 'video/webm' });
+      const blob = new Blob(chunks, { type: mimeType });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${videoFile.name.split('.')[0]}_subtitled.webm`;
+      a.download = `${videoFile.name.split('.')[0]}_subtitled.${mimeType.includes('mp4') ? 'mp4' : 'webm'}`;
       a.click();
       URL.revokeObjectURL(url);
       setIsExportingVideo(false);
+      video.muted = originalMuted;
       video.currentTime = originalTime;
+      video.pause();
     };
 
     video.currentTime = 0;
-    video.pause();
-
-    await new Promise(resolve => setTimeout(resolve, 500)); // Buffer
+    video.muted = true; // Mute during render to avoid audio overlap issues
+    
+    // Ensure video is ready at frame 0
+    await new Promise((resolve) => {
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked);
+        resolve(true);
+      };
+      video.addEventListener('seeked', onSeeked);
+    });
 
     recorder.start();
+    await video.play().catch(console.error);
 
-    const renderFrame = () => {
-      if (!isExportingVideo) return;
+    const renderLoop = () => {
+      if (!isExportingVideo) {
+        recorder.stop();
+        video.pause();
+        return;
+      }
 
-      // Draw Video
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Draw Subtitles (Bottom 25%)
       const currentTime = video.currentTime;
       const sub = subtitles.find(s => currentTime >= s.start && currentTime <= s.end);
       
       if (sub) {
         ctx.save();
-        const fontSize = (settings.fontSize / 1080) * canvas.height; // Scale font to video res
+        const fontBase = 1080;
+        const relativeSize = settings.fontSize / fontBase;
+        const fontSize = Math.max(relativeSize * canvas.height, 20);
+        
         ctx.font = `500 ${fontSize}px Inter, sans-serif`;
         ctx.textAlign = 'center';
         ctx.textBaseline = 'bottom';
         
-        const padding = canvas.width * 0.05;
-        const maxWidth = canvas.width - (padding * 2);
         const x = canvas.width / 2;
-        const y = canvas.height * 0.92; // Near bottom
+        const y = canvas.height * 0.92;
+        const maxWidth = canvas.width * 0.9;
 
-        // Shadow settings
         if (settings.shadow !== 'none') {
-          const blur = settings.shadow === 'small' ? 2 : settings.shadow === 'medium' ? 6 : 12;
+          const blur = settings.shadow === 'small' ? fontSize * 0.05 : 
+                      settings.shadow === 'medium' ? fontSize * 0.15 : 
+                      fontSize * 0.25;
           ctx.shadowColor = 'rgba(0,0,0,0.9)';
           ctx.shadowBlur = blur;
           ctx.shadowOffsetX = blur / 2;
           ctx.shadowOffsetY = blur / 2;
         }
-
-        // Background Box (Optional for visibility)
-        const metrics = ctx.measureText(sub.text);
-        const bgWidth = Math.min(metrics.width + 40, maxWidth);
-        ctx.fillStyle = 'rgba(0,0,0,0.6)';
-        // ctx.fillRect(x - bgWidth/2, y - fontSize - 10, bgWidth, fontSize + 20); // Hidden for requested text-only style
 
         ctx.fillStyle = 'white';
         ctx.fillText(sub.text, x, y, maxWidth);
@@ -151,14 +166,14 @@ export default function App() {
       setExportProgress((video.currentTime / video.duration) * 100);
 
       if (video.currentTime < video.duration && !video.paused) {
-        requestAnimationFrame(renderFrame);
-      } else if (video.currentTime >= video.duration) {
+        requestAnimationFrame(renderLoop);
+      } else {
         recorder.stop();
+        video.pause();
       }
     };
 
-    video.play();
-    renderFrame();
+    renderLoop();
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
