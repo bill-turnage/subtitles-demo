@@ -12,6 +12,7 @@ import { ISO_LANGUAGES, Subtitle, SubtitleSettings } from './constants';
 export default function App() {
   const [videoFile, setVideoFile] = useState<File | null>(null);
   const [videoSrc, setVideoSrc] = useState<string>('');
+  const [currentTime, setCurrentTime] = useState(0);
   const [sourceLang, setSourceLang] = useState('es');
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [currentSubtitle, setCurrentSubtitle] = useState<string>('');
@@ -28,6 +29,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [isExportingVideo, setIsExportingVideo] = useState(false);
+  const isExportingRef = useRef(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [syncOffset, setSyncOffset] = useState(0);
 
@@ -122,6 +124,7 @@ export default function App() {
     const originalMuted = video.muted;
     
     setIsExportingVideo(true);
+    isExportingRef.current = true;
     setExportProgress(0);
 
     const canvas = document.createElement('canvas');
@@ -149,6 +152,7 @@ export default function App() {
       if (chunks.length === 0) {
         setError("Export failed: No video data captured.");
         setIsExportingVideo(false);
+        isExportingRef.current = false;
         return;
       }
       const blob = new Blob(chunks, { type: mimeType });
@@ -159,6 +163,7 @@ export default function App() {
       a.click();
       URL.revokeObjectURL(url);
       setIsExportingVideo(false);
+      isExportingRef.current = false;
       video.muted = originalMuted;
       video.currentTime = originalTime;
       video.pause();
@@ -195,10 +200,11 @@ export default function App() {
     await video.play().catch(err => {
       console.error("Playback error during export:", err);
       setIsExportingVideo(false);
+      isExportingRef.current = false;
     });
 
     const renderLoop = () => {
-      if (!isExportingVideo) {
+      if (!isExportingRef.current) {
         if (recorder.state !== 'inactive') recorder.stop();
         video.pause();
         return;
@@ -459,9 +465,10 @@ export default function App() {
 
   const handleTimeUpdate = () => {
     if (!videoRef.current) return;
-    const currentTime = videoRef.current.currentTime;
+    const time = videoRef.current.currentTime;
+    setCurrentTime(time);
     const activeSub = subtitles.find(
-      (sub) => currentTime >= sub.start && currentTime <= sub.end
+      (sub) => time >= sub.start && time <= sub.end
     );
     setCurrentSubtitle(activeSub ? activeSub.text : '');
   };
@@ -561,7 +568,10 @@ export default function App() {
               Please keep this tab active. We are re-encoding your video at its source resolution with embedded captions.
             </p>
             <button 
-              onClick={() => setIsExportingVideo(false)}
+              onClick={() => {
+                setIsExportingVideo(false);
+                isExportingRef.current = false;
+              }}
               className="mt-8 px-6 py-2 border border-neutral-800 text-neutral-400 text-xs uppercase tracking-widest hover:bg-neutral-800 transition-colors rounded"
             >
               Cancel Render
@@ -572,14 +582,14 @@ export default function App() {
 
       <main className="flex-1 flex overflow-hidden">
         {/* Settings Sidebar */}
-        <aside className="w-80 border-r border-neutral-800 bg-neutral-900/30 p-6 flex flex-col gap-4 flex-shrink-0 overflow-y-auto custom-scrollbar">
+        <aside className="w-72 border-r border-neutral-800 bg-neutral-900/30 p-5 flex flex-col gap-3 flex-shrink-0 overflow-y-auto custom-scrollbar">
           
           {/* Upload Section */}
           <section>
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500 mb-2">1. Media Source</h3>
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-1.5">1. Media Source</h3>
             <div 
               onClick={() => fileInputRef.current?.click()}
-              className={`w-full py-6 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-2 transition-all cursor-pointer overflow-hidden group ${
+              className={`w-full py-5 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer overflow-hidden group ${
                 videoFile 
                   ? 'border-amber-500/30 bg-amber-500/5' 
                   : 'border-neutral-700 bg-neutral-800/40 hover:bg-neutral-800/60'
@@ -587,15 +597,15 @@ export default function App() {
             >
               {videoFile ? (
                 <div className="flex flex-col items-center animate-in fade-in zoom-in duration-300">
-                  <Check className="w-8 h-8 text-amber-500 mb-2" />
-                  <span className="text-[10px] font-bold text-amber-500 uppercase tracking-widest px-4 text-center truncate w-full">
+                  <Check className="w-7 h-7 text-amber-500 mb-1.5" />
+                  <span className="text-[9px] font-bold text-amber-500 uppercase tracking-widest px-3 text-center truncate w-full">
                     {videoFile.name}
                   </span>
                 </div>
               ) : (
                 <>
-                  <Upload className="w-8 h-8 text-neutral-500 group-hover:text-amber-500 transition-colors" />
-                  <span className="text-[10px] font-medium text-neutral-400 uppercase tracking-widest">
+                  <Upload className="w-7 h-7 text-neutral-500 group-hover:text-amber-500 transition-colors" />
+                  <span className="text-[9px] font-medium text-neutral-400 uppercase tracking-widest">
                     Upload Video
                   </span>
                 </>
@@ -611,15 +621,15 @@ export default function App() {
           </section>
 
           {/* Language Selection */}
-          <section className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">2. Language Config</h3>
-            <div className="space-y-3">
+          <section className="space-y-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">2. Language Config</h3>
+            <div className="space-y-2.5">
               <label className="block">
-                <span className="text-[10px] text-neutral-400 mb-1 block uppercase tracking-tight font-bold">Source Audio (ISO 639)</span>
+                <span className="text-[9px] text-neutral-400 mb-1 block uppercase tracking-tight font-bold">Source Audio (ISO 639)</span>
                 <select 
                   value={sourceLang}
                   onChange={(e) => setSourceLang(e.target.value)}
-                  className="w-full bg-neutral-800 border border-neutral-700 rounded px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-amber-500/50 text-neutral-200 cursor-pointer"
+                  className="w-full bg-neutral-800 border border-neutral-700 rounded px-2.5 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-amber-500/50 text-neutral-200 cursor-pointer"
                 >
                   {ISO_LANGUAGES.map((lang) => (
                     <option key={lang.code} value={lang.code}>
@@ -629,8 +639,8 @@ export default function App() {
                 </select>
               </label>
               <label className="block opacity-60">
-                <span className="text-[10px] text-neutral-400 mb-1 block uppercase tracking-tight font-bold">Output Subtitles</span>
-                <div className="w-full bg-neutral-950 border border-neutral-800 rounded px-3 py-2 text-sm text-neutral-500 font-mono">
+                <span className="text-[9px] text-neutral-400 mb-1 block uppercase tracking-tight font-bold">Output Subtitles</span>
+                <div className="w-full bg-neutral-950 border border-neutral-800 rounded px-2.5 py-1.5 text-xs text-neutral-500 font-mono">
                   en - English (Static)
                 </div>
               </label>
@@ -638,15 +648,15 @@ export default function App() {
           </section>
 
           {/* Sync Adjustment */}
-          <section className="space-y-4">
+          <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">3. Sync Syncronize</h3>
-              <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${syncOffset !== 0 ? 'bg-amber-500/10 text-amber-500' : 'text-neutral-600'}`}>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">3. Sync Syncronize</h3>
+              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${syncOffset !== 0 ? 'bg-amber-500/10 text-amber-500' : 'text-neutral-600'}`}>
                 {syncOffset > 0 ? '+' : ''}{syncOffset}s
               </span>
             </div>
-            <div className="flex gap-4 items-center">
-              <div className="flex-1 space-y-2">
+            <div className="flex gap-3 items-center">
+              <div className="flex-1 space-y-1.5">
                 <input 
                   type="range" 
                   min="-20"
@@ -656,7 +666,7 @@ export default function App() {
                   onChange={(e) => setSyncOffset(parseInt(e.target.value))}
                   className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
                 />
-                <div className="flex justify-between text-[8px] font-mono text-neutral-600 uppercase tracking-widest">
+                <div className="flex justify-between text-[7px] font-mono text-neutral-600 uppercase tracking-widest">
                   <span>-20s</span>
                   <span>0</span>
                   <span>+20s</span>
@@ -665,7 +675,7 @@ export default function App() {
               <button
                 onClick={synchronizeSubtitles}
                 disabled={!subtitles.length || syncOffset === 0}
-                className="w-20 px-2 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 border border-neutral-700 rounded text-[9px] uppercase font-bold text-center leading-tight transition-all"
+                className="w-18 px-1.5 py-1.5 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-30 border border-neutral-700 rounded text-[8px] uppercase font-bold text-center leading-tight transition-all"
               >
                 Syncronize<br/>Subtitles
               </button>
@@ -673,13 +683,13 @@ export default function App() {
           </section>
 
           {/* Subtitle Styling */}
-          <section className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-neutral-500">4. Visual Style</h3>
-            <div className="space-y-6">
+          <section className="space-y-3">
+            <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">4. Visual Style</h3>
+            <div className="space-y-5">
               <div>
-                <div className="flex justify-between mb-2">
-                  <label className="text-[10px] text-neutral-400 uppercase tracking-tight font-bold">Font Size</label>
-                  <span className="text-[10px] text-amber-500 font-mono">{settings.fontSize}px</span>
+                <div className="flex justify-between mb-1.5">
+                  <label className="text-[9px] text-neutral-400 uppercase tracking-tight font-bold">Font Size</label>
+                  <span className="text-[9px] text-amber-500 font-mono">{settings.fontSize}px</span>
                 </div>
                 <input 
                   type="range" 
@@ -691,13 +701,13 @@ export default function App() {
                 />
               </div>
               <div>
-                <label className="text-[10px] text-neutral-400 uppercase tracking-tight block mb-2 font-bold">Drop Shadow Depth</label>
-                <div className="grid grid-cols-4 gap-2">
+                <label className="text-[9px] text-neutral-400 uppercase tracking-tight block mb-1.5 font-bold">Drop Shadow Depth</label>
+                <div className="grid grid-cols-4 gap-1.5">
                   {(['none', 'small', 'medium', 'large'] as const).map((s) => (
                     <button 
                       key={s}
                       onClick={() => setSettings({ ...settings, shadow: s })}
-                      className={`h-8 border rounded text-[9px] uppercase font-bold transition-all ${
+                      className={`h-7 border rounded text-[8px] uppercase font-bold transition-all ${
                         settings.shadow === s
                           ? 'border-amber-500/50 bg-amber-500/10 text-amber-500'
                           : 'border-neutral-700 bg-neutral-800 text-neutral-500 hover:border-neutral-600'
@@ -711,11 +721,11 @@ export default function App() {
             </div>
           </section>
 
-          <div className="pt-4 mt-auto">
+          <div className="pt-3 mt-auto">
             <button 
               onClick={generateSubtitles}
               disabled={!videoFile || isProcessing}
-              className={`w-full py-4 font-bold uppercase tracking-widest text-[10px] rounded transition-all active:scale-95 flex items-center justify-center gap-2 ${
+              className={`w-full py-3.5 font-bold uppercase tracking-widest text-[9px] rounded transition-all active:scale-95 flex items-center justify-center gap-1.5 ${
                 !videoFile 
                   ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed shadow-none' 
                   : isProcessing
@@ -725,7 +735,7 @@ export default function App() {
             >
               {isProcessing ? (
                 <>
-                  <Loader2 className="w-3 h-3 animate-spin" />
+                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
                   Generating...
                 </>
               ) : (
@@ -763,19 +773,19 @@ export default function App() {
                 />
                 
                 {/* Time Display */}
-                <div className="absolute bottom-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute bottom-10 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
                   <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-amber-500 border border-amber-500/30 shadow-lg">
-                    {formatVideoTime(videoRef.current?.currentTime || 0)}
+                    {formatVideoTime(currentTime)}
                   </div>
                   <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-neutral-300 border border-neutral-700 shadow-lg">
-                    -{formatVideoTime((videoRef.current?.duration || 0) - (videoRef.current?.currentTime || 0))}
+                    -{formatVideoTime((videoRef.current?.duration || 0) - currentTime)}
                   </div>
                 </div>
 
                 {/* Subtitle Overlay (Lower 25%) */}
-                <div className="absolute bottom-0 left-0 w-full h-1/4 flex flex-col items-center justify-center pb-8 z-10 pointer-events-none">
-                  <div className="absolute top-0 w-full border-t border-amber-500/10 border-dashed text-[8px] text-amber-500/30 text-center py-1 uppercase tracking-[0.4em] font-mono">
-                    Subtitle Boundary (Lower 25%)
+                <div className="absolute bottom-10 left-0 w-full h-[15%] flex flex-col items-center justify-center pb-2 z-10 pointer-events-none">
+                  <div className="absolute top-0 w-full border-t border-amber-500/10 border-dashed text-[8px] text-amber-500/30 text-center py-1 uppercase tracking-[0.4em] font-mono opacity-20">
+                    Subtitle Area
                   </div>
                   
                   <AnimatePresence mode="wait">
@@ -802,19 +812,28 @@ export default function App() {
                 </div>
 
                 {/* Play/Pause Overlay */}
-                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none pb-12">
                   <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white">
                     {isPlaying ? <Pause className="w-6 h-6 outline-none" /> : <Play className="w-6 h-6 fill-current ml-1" />}
                   </div>
                 </div>
 
-                {/* Progress Bar */}
-                <div className="absolute bottom-0 w-full h-1 bg-neutral-900">
-                  <div 
-                    className="h-full bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)] transition-all duration-100" 
-                    style={{ 
-                      width: `${videoRef.current ? (videoRef.current.currentTime / videoRef.current.duration) * 100 : 0}%` 
-                    }} 
+                {/* Progress Bar / Seek Slider */}
+                <div className="absolute bottom-0 w-full h-10 bg-black/40 backdrop-blur-sm flex items-center px-4 opacity-0 group-hover:opacity-100 transition-opacity z-30">
+                  <input 
+                    type="range"
+                    min="0"
+                    max={videoRef.current?.duration || 0}
+                    step="0.05"
+                    value={currentTime}
+                    onChange={(e) => {
+                      if (videoRef.current) {
+                        const val = parseFloat(e.target.value);
+                        videoRef.current.currentTime = val;
+                        setCurrentTime(val);
+                      }
+                    }}
+                    className="w-full h-1.5 bg-neutral-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
                   />
                 </div>
               </>
