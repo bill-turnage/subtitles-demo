@@ -17,6 +17,7 @@ export default function App() {
   const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
   const [currentSubtitle, setCurrentSubtitle] = useState<string>('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,6 +32,8 @@ export default function App() {
   const [isExportingVideo, setIsExportingVideo] = useState(false);
   const isExportingRef = useRef(false);
   const [exportProgress, setExportProgress] = useState(0);
+  const [exportStartTime, setExportStartTime] = useState<number | null>(null);
+  const [eta, setEta] = useState<string | null>(null);
   const [syncOffset, setSyncOffset] = useState(0);
 
   // Gemini API Initialization
@@ -134,6 +137,8 @@ export default function App() {
     setIsExportingVideo(true);
     isExportingRef.current = true;
     setExportProgress(0);
+    setExportStartTime(Date.now());
+    setEta(null);
 
     const canvas = document.createElement('canvas');
     canvas.width = video.videoWidth;
@@ -258,6 +263,17 @@ export default function App() {
       const progress = (video.currentTime / video.duration) * 100;
       setExportProgress(progress);
 
+      // ETA Calculation every 1% or so
+      if (exportStartTime && progress > 5) {
+        const elapsed = (Date.now() - exportStartTime) / 1000;
+        const totalEstimated = elapsed / (progress / 100);
+        const remaining = Math.max(0, totalEstimated - elapsed);
+        
+        const mins = Math.floor(remaining / 60);
+        const secs = Math.floor(remaining % 60);
+        setEta(`${mins}:${secs.toString().padStart(2, '0')}`);
+      }
+
       if (video.currentTime < video.duration && !video.paused) {
         requestAnimationFrame(renderLoop);
       } else {
@@ -361,11 +377,21 @@ export default function App() {
     if (!videoFile) return;
 
     setIsProcessing(true);
+    setProcessingProgress(0);
     setError(null);
+
+    // Pseudo-progress for UI feedback
+    const progressInterval = setInterval(() => {
+      setProcessingProgress(prev => {
+        if (prev >= 95) return prev;
+        return prev + Math.random() * 5;
+      });
+    }, 1000);
 
     try {
       // Extract ONLY audio to prevent "Allocation size overflow"
       const audioBase64 = await extractAudio(videoFile);
+      setProcessingProgress(40);
       
       const prompt = `Transcribe this audio and translate it from its source language (${ISO_LANGUAGES.find(l => l.code === sourceLang)?.name}) to English. 
       Output ONLY a JSON array of objects. Each object MUST have 'start' (number, seconds), 'end' (number, seconds), and 'text' (string, English subtitle).
@@ -467,11 +493,13 @@ export default function App() {
 
       const sortedSubtitles = parsedSubtitles.sort((a, b) => a.start - b.start);
       setSubtitles(sortedSubtitles);
+      setProcessingProgress(100);
     } catch (err) {
       console.error(err);
       setError('Failed to generate subtitles. Please try again.');
     } finally {
       setIsProcessing(false);
+      clearInterval(progressInterval);
     }
   };
 
@@ -535,7 +563,7 @@ export default function App() {
             >
               <Layers className="w-4 h-4 text-amber-500" />
               <div>
-                <p className="font-semibold text-neutral-200">Burnt-in Video</p>
+                <p className="font-semibold text-neutral-200">Save Video</p>
                 <p className="text-[10px] text-neutral-500">Embed captions into .webm</p>
               </div>
             </button>
@@ -575,10 +603,15 @@ export default function App() {
                 <span className="text-xl font-mono text-amber-500">{Math.round(exportProgress)}%</span>
               </div>
             </div>
-            <h2 className="text-2xl font-serif italic text-white mb-2">Burning Subtitles</h2>
-            <p className="text-neutral-500 text-sm max-w-sm">
+            <h2 className="text-2xl font-serif italic text-white mb-2">Saving Video</h2>
+            <p className="text-neutral-500 text-sm max-w-sm mb-4">
               Please keep this tab active. We are re-encoding your video at its source resolution with embedded captions.
             </p>
+            {eta && exportProgress > 5 && (
+              <p className="text-amber-500/80 font-mono text-[10px] uppercase tracking-[0.2em] mb-2">
+                Estimated Time Remaining: {eta}
+              </p>
+            )}
             <button 
               onClick={() => {
                 setIsExportingVideo(false);
@@ -601,7 +634,7 @@ export default function App() {
             <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500 mb-1.5">1. Media Source</h3>
             <div 
               onClick={() => fileInputRef.current?.click()}
-              className={`w-full py-5 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer overflow-hidden group ${
+              className={`w-full py-4 border-2 border-dashed rounded-lg flex flex-col items-center justify-center gap-1.5 transition-all cursor-pointer overflow-hidden group ${
                 videoFile 
                   ? 'border-amber-500/30 bg-amber-500/5' 
                   : 'border-neutral-700 bg-neutral-800/40 hover:bg-neutral-800/60'
@@ -662,22 +695,39 @@ export default function App() {
           {/* Sync Adjustment */}
           <section className="space-y-3">
             <div className="flex items-center justify-between">
-              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">3. Sync Syncronize</h3>
+              <h3 className="text-[11px] font-semibold uppercase tracking-wider text-neutral-500">3. Sync Subtitles</h3>
               <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${syncOffset !== 0 ? 'bg-amber-500/10 text-amber-500' : 'text-neutral-600'}`}>
                 {syncOffset > 0 ? '+' : ''}{syncOffset}s
               </span>
             </div>
             <div className="flex gap-3 items-center">
-              <div className="flex-1 space-y-1.5">
-                <input 
-                  type="range" 
-                  min="-20"
-                  max="20"
-                  step="1"
-                  value={syncOffset}
-                  onChange={(e) => setSyncOffset(parseInt(e.target.value))}
-                  className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500"
-                />
+              <div className="flex-1 space-y-2">
+                <div className="relative h-6 flex items-center">
+                  <input 
+                    type="range" 
+                    min="-20"
+                    max="20"
+                    step="1"
+                    value={syncOffset}
+                    onChange={(e) => setSyncOffset(parseInt(e.target.value))}
+                    className="w-full h-1 bg-neutral-800 rounded-lg appearance-none cursor-pointer accent-amber-500 relative z-10"
+                  />
+                  {/* Tick Marks */}
+                  <div className="absolute inset-0 flex justify-between items-center pointer-events-none px-[2px]">
+                    {Array.from({ length: 41 }).map((_, i) => {
+                      const val = i - 20;
+                      const isMajor = val % 5 === 0;
+                      return (
+                        <div 
+                          key={i} 
+                          className={`bg-neutral-700 transition-colors ${
+                            isMajor ? 'h-2.5 w-[1.5px]' : 'h-1.5 w-[1px]'
+                          } ${Math.abs(val - syncOffset) < 1 ? 'bg-amber-500' : ''}`}
+                        />
+                      );
+                    })}
+                  </div>
+                </div>
                 <div className="flex justify-between text-[7px] font-mono text-neutral-600 uppercase tracking-widest">
                   <span>-20s</span>
                   <span>0</span>
@@ -737,7 +787,7 @@ export default function App() {
             <button 
               onClick={generateSubtitles}
               disabled={!videoFile || isProcessing}
-              className={`w-full py-3.5 font-bold uppercase tracking-widest text-[9px] rounded transition-all active:scale-95 flex items-center justify-center gap-1.5 ${
+              className={`w-full py-3.5 font-bold uppercase tracking-widest text-[9px] rounded transition-all active:scale-95 flex items-center justify-center gap-1.5 relative overflow-hidden ${
                 !videoFile 
                   ? 'bg-neutral-800 text-neutral-600 cursor-not-allowed shadow-none' 
                   : isProcessing
@@ -745,14 +795,22 @@ export default function App() {
                     : 'bg-amber-500 text-black hover:bg-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.2)] animate-pulse hover:animate-none'
               }`}
             >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-2.5 h-2.5 animate-spin" />
-                  Generating...
-                </>
-              ) : (
-                'Generate Captions'
+              {isProcessing && (
+                <div 
+                  className="absolute inset-0 bg-amber-500/10 transition-all duration-500 ease-out z-0" 
+                  style={{ width: `${processingProgress}%` }}
+                />
               )}
+              <span className="relative z-10 flex items-center gap-1.5">
+                {isProcessing ? (
+                  <>
+                    <Loader2 className="w-2.5 h-2.5 animate-spin" />
+                    Captions {Math.round(processingProgress)}%
+                  </>
+                ) : (
+                  'Generate Captions'
+                )}
+              </span>
             </button>
           </div>
         </aside>
@@ -785,22 +843,12 @@ export default function App() {
                 />
                 
                 {/* Time Display */}
-                <div className="absolute bottom-10 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                <div className="absolute bottom-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
                   <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-amber-500 border border-amber-500/30 shadow-lg">
                     {formatVideoTime(currentTime)}
                   </div>
                   <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-neutral-300 border border-neutral-700 shadow-lg">
                     -{formatVideoTime((videoRef.current?.duration || 0) - currentTime)}
-                  </div>
-                </div>
-
-                {/* Time Display */}
-                <div className="absolute bottom-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
-                  <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-amber-500 border border-amber-500/30 shadow-lg">
-                    {formatVideoTime(videoRef.current?.currentTime || 0)}
-                  </div>
-                  <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-neutral-300 border border-neutral-700 shadow-lg">
-                    -{formatVideoTime((videoRef.current?.duration || 0) - (videoRef.current?.currentTime || 0))}
                   </div>
                 </div>
 
