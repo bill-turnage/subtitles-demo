@@ -71,6 +71,14 @@ export default function App() {
     }
   }, [videoFile]);
 
+  useEffect(() => {
+    if (videoFile) {
+      const url = URL.createObjectURL(videoFile);
+      setVideoSrc(url);
+      return () => URL.revokeObjectURL(url);
+    }
+  }, [videoFile]);
+
   const formatVideoTime = (seconds: number): string => {
     if (!seconds || isNaN(seconds)) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -783,6 +791,16 @@ export default function App() {
                   </div>
                   <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-neutral-300 border border-neutral-700 shadow-lg">
                     -{formatVideoTime((videoRef.current?.duration || 0) - currentTime)}
+                  </div>
+                </div>
+
+                {/* Time Display */}
+                <div className="absolute bottom-4 left-4 right-4 flex justify-between z-20 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-amber-500 border border-amber-500/30 shadow-lg">
+                    {formatVideoTime(videoRef.current?.currentTime || 0)}
+                  </div>
+                  <div className="bg-black/80 backdrop-blur-md px-4 py-1.5 rounded-sm text-[12px] font-mono text-neutral-300 border border-neutral-700 shadow-lg">
+                    -{formatVideoTime((videoRef.current?.duration || 0) - (videoRef.current?.currentTime || 0))}
                   </div>
                 </div>
 
