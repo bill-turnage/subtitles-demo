@@ -171,6 +171,7 @@ export default function App() {
 
     video.currentTime = 0;
     video.muted = true;
+    video.playbackRate = 1.0;
     
     // Improved ready check
     if (video.readyState < 2) {
@@ -194,11 +195,13 @@ export default function App() {
     });
 
     // Small delay to ensure canvas is ready
-    await new Promise(resolve => setTimeout(resolve, 300));
+    await new Promise(resolve => setTimeout(resolve, 500));
 
-    recorder.start(1000); // Collect data in 1s chunks
+    recorder.start(1000);
+    console.log('Subtitle Maker: Export started.');
+    
     await video.play().catch(err => {
-      console.error("Playback error during export:", err);
+      console.error("Subtitle Maker: Playback error during export:", err);
       setIsExportingVideo(false);
       isExportingRef.current = false;
     });
@@ -244,14 +247,15 @@ export default function App() {
         ctx.restore();
       }
 
-      setExportProgress((video.currentTime / video.duration) * 100);
+      const progress = (video.currentTime / video.duration) * 100;
+      setExportProgress(progress);
 
       if (video.currentTime < video.duration && !video.paused) {
         requestAnimationFrame(renderLoop);
       } else {
+        console.log('Subtitle Maker: Export finished capturing.');
         if (recorder.state !== 'inactive') {
-          // Slight delay to catch the very last frame
-          setTimeout(() => recorder.stop(), 100);
+          setTimeout(() => recorder.stop(), 200);
         }
         video.pause();
       }
